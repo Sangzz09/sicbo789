@@ -13,28 +13,51 @@ const API_URL =
   "https://demo7892.fun/history/getLastResult?gameId=ktrng_3986&size=100&tableId=398625062021&curPage=1";
 
 // ─── Fetch data from source ───────────────────────────────────────────────────
+// Cache lưu data khi được push từ ngoài vào
+let cachedData = [];
+let lastUpdated = null;
+
 async function fetchData() {
-  const res = await fetch(API_URL, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0",
-      "Accept": "*/*",
-      "Accept-Language": "en,vi;q=0.9",
-      "Accept-Encoding": "gzip, deflate, br, zstd",
-      "Authorization": "f03c7ca3baa6561825b10556cbb3ecf8",
-      "Content-Type": "application/json;charset=UTF-8",
-      "Origin": "https://789clubs.im",
-      "Referer": "https://789clubs.im/",
-      "sec-ch-ua": '"Chromium";v="148", "Microsoft Edge";v="148", "Not/A)Brand";v="99"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"Windows"',
-      "sec-fetch-dest": "empty",
-      "sec-fetch-mode": "cors",
-      "sec-fetch-site": "cross-site",
-    },
-  });
-  if (!res.ok) throw new Error("Fetch failed: " + res.status);
-  const json = await res.json();
-  return json.data.resultList || [];
+  // Thử các proxy công khai để bypass 403
+  const proxies = [
+    `https://corsproxy.io/?${encodeURIComponent(API_URL)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(API_URL)}`,
+    `https://proxy.cors.sh/${API_URL}`,
+  ];
+
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0",
+    "Accept": "*/*",
+    "Accept-Language": "en,vi;q=0.9",
+    "Authorization": "f03c7ca3baa6561825b10556cbb3ecf8",
+    "Origin": "https://789clubs.im",
+    "Referer": "https://789clubs.im/",
+  };
+
+  // Thử direct trước
+  try {
+    const res = await fetch(API_URL, { headers });
+    if (res.ok) {
+      const json = await res.json();
+      const list = json.data?.resultList || [];
+      if (list.length > 0) { cachedData = list; lastUpdated = Date.now(); return list; }
+    }
+  } catch(_) {}
+
+  // Thử từng proxy
+  for (const url of proxies) {
+    try {
+      const res = await fetch(url, { headers: { "x-requested-with": "XMLHttpRequest" } });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const list = json.data?.resultList || json.resultList || [];
+      if (list.length > 0) { cachedData = list; lastUpdated = Date.now(); return list; }
+    } catch(_) { continue; }
+  }
+
+  // Dùng cache nếu có
+  if (cachedData.length > 0) return cachedData;
+  throw new Error("Không thể lấy dữ liệu - API bị chặn. Dùng /push để cập nhật thủ công.");
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -315,6 +338,31 @@ app.get("/algorithms", async (req, res) => {
   } catch (err) {
     res.status(500).json({ loi: err.message });
   }
+});
+
+// POST /push - nhận data từ browser gửi lên (bypass 403)
+app.post("/push", (req, res) => {
+  try {
+    const list = req.body?.data?.resultList || req.body?.resultList || [];
+    if (!Array.isArray(list) || list.length === 0)
+      return res.status(400).json({ loi: "Không có resultList" });
+    cachedData = list;
+    lastUpdated = Date.now();
+    res.json({ ok: true, da_luu: list.length, thoi_gian: new Date(lastUpdated).toISOString() });
+  } catch (err) {
+    res.status(500).json({ loi: err.message });
+  }
+});
+
+// GET /status - kiểm tra cache
+app.get("/status", (req, res) => {
+  res.json({
+    cache: cachedData.length > 0,
+    so_phien: cachedData.length,
+    cap_nhat_luc: lastUpdated ? new Date(lastUpdated).toISOString() : null,
+    api_url: API_URL,
+    id: "@sewdangcap",
+  });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
