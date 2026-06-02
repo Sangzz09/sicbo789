@@ -10,7 +10,8 @@ app.use(cors());
 app.use(express.json());
 
 const API_URL =
-  "https://api.xeuigogo.info/v2/history/getLastResult?gameId=ktrng_3986&size=200&tableId=39861215743193&curPage=1";
+  "
+https://demo7892.fun/history/getLastResult?gameId=ktrng_3986&size=100&tableId=398625062021&curPage=1";
 
 // ─── Fetch data from source ───────────────────────────────────────────────────
 async function fetchData() {
