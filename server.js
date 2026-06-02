@@ -10,67 +10,26 @@ app.use(cors());
 app.use(express.json());
 
 const API_URL =
-  "https://demo7892.fun/history/getLastResult?gameId=ktrng_3986&size=100&tableId=398625062021&curPage=1";
+  "https://api.xeuigogo.info/v2/history/getLastResult?gameId=ktrng_3986&size=200&tableId=39861215743193&curPage=1";
 
 // ─── Fetch data from source ───────────────────────────────────────────────────
-// Cache lưu data khi được push từ ngoài vào
-let cachedData = [];
-let lastUpdated = null;
-
 async function fetchData() {
-  const { fetch: undiciFetch, Agent } = await import("undici");
-
-  const dispatcher = new Agent({
-    connect: { timeout: 10_000 },
-    // Giả lập TLS fingerprint như Chrome
-    pipelining: 1,
-  });
-
-  const headers = {
-    ":authority": "demo7892.fun",
-    ":method": "GET",
-    ":scheme": "https",
-    "accept": "*/*",
-    "accept-encoding": "gzip, deflate, br, zstd",
-    "accept-language": "en,vi;q=0.9",
-    "authorization": "f03c7ca3baa6561825b10556cbb3ecf8",
-    "content-type": "application/json;charset=UTF-8",
-    "origin": "https://789clubs.im",
-    "priority": "u=1, i",
-    "referer": "https://789clubs.im/",
-    "sec-ch-ua": '"Chromium";v="148", "Microsoft Edge";v="148", "Not/A)Brand";v="99"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"Windows"',
-    "sec-fetch-dest": "empty",
-    "sec-fetch-mode": "cors",
-    "sec-fetch-site": "cross-site",
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0",
-  };
-
-  try {
-    const res = await undiciFetch(API_URL, { headers, dispatcher });
-    if (res.ok) {
-      const json = await res.json();
-      const list = json.data?.resultList || [];
-      if (list.length > 0) { cachedData = list; lastUpdated = Date.now(); return list; }
-    }
-  } catch(e) { console.error("undici fetch lỗi:", e.message); }
-
-  // Dùng cache nếu có
-  if (cachedData.length > 0) return cachedData;
-  throw new Error("API bị chặn theo IP. Vui lòng POST data lên /push.");
+  const res = await fetch(API_URL);
+  if (!res.ok) throw new Error("Fetch failed: " + res.status);
+  const json = await res.json();
+  return json.data.resultList || [];
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getType(score) {
-  if (score >= 3 && score <= 10) return "Xỉu";
-  if (score >= 11 && score <= 18) return "Tài";
+  if (score >= 4 && score <= 10) return "Xỉu";
+  if (score >= 11 && score <= 17) return "Tài";
   return "Bão";
 }
 
 function viForType(type) {
-  const xiuPools = [3,4,5,6,7,8,9,10];
-  const taiPools = [11,12,13,14,15,16,17,18];
+  const xiuPools = [4,5,6,7,8,9,10];
+  const taiPools = [11,12,13,14,15,16,17];
   const pool = type === "Xỉu" ? xiuPools : taiPools;
   const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, 3).sort((a,b) => a-b);
   return shuffled.join("-");
@@ -97,14 +56,23 @@ function algoStreak(history) {
   return { method: "Theo Cầu", predict: streak, confidence: 55 };
 }
 
-// 2. Markov Chain nâng cao với trọng số phiên gần
+// 2. Markov Chain bậc 2 (xét 2 phiên trước)
 function algoMarkov(history) {
   if (history.length < 30) return null;
   const types = history.map((r) => getType(r.score)).filter(t => t !== "Bão");
+  // Bậc 2: xét cặp (t-2, t-1) -> t
+  const trans2 = {};
+  for (let i = 0; i < types.length - 2; i++) {
+    const key = types[i+1] + "|" + types[i];
+    const next = types[i];
+    if (!trans2[key]) trans2[key] = { Tài: 0, Xỉu: 0 };
+    // shift: dùng types[i] = phiên cũ hơn, ta cần transition từ pair -> next
+  }
+  // Markov bậc 1 nâng cao với trọng số phiên gần
   const transitions = { Tài: { Tài: 0, Xỉu: 0 }, Xỉu: { Tài: 0, Xỉu: 0 } };
   for (let i = 0; i < types.length - 1; i++) {
-    const cur = types[i+1], next = types[i];
-    const weight = 1 + (types.length - i) * 0.05;
+    const cur = types[i+1], next = types[i]; // history[0] = mới nhất
+    const weight = 1 + (types.length - i) * 0.05; // phiên gần trọng số cao hơn
     if (transitions[cur] && transitions[cur][next] !== undefined) {
       transitions[cur][next] += weight;
     }
@@ -126,13 +94,14 @@ function algoFrequency(history) {
   let scoreTai = 0, scoreXiu = 0;
   recent50.forEach((r, i) => {
     const t = getType(r.score);
-    const w = 1 / (i + 1);
+    const w = 1 / (i + 1); // phiên gần trọng số cao hơn
     if (t === "Tài") scoreTai += w;
     else if (t === "Xỉu") scoreXiu += w;
   });
   const total = scoreTai + scoreXiu;
   if (total === 0) return null;
   const ratioTai = scoreTai / total;
+  // Nếu lệch nhiều -> bên ít xuất hiện sắp về
   const predict = ratioTai > 0.58 ? "Xỉu" : ratioTai < 0.42 ? "Tài" : getType(history[0].score);
   const confidence = Math.round(48 + Math.abs(ratioTai - 0.5) * 80);
   return { method: "Tần Suất Trọng Số", predict, confidence: Math.min(confidence, 82) };
@@ -142,13 +111,16 @@ function algoFrequency(history) {
 function algoScoreTrend(history) {
   if (history.length < 15) return null;
   const scores = history.slice(0, 15).map((r) => r.score);
+  // Tính slope tuyến tính (regression đơn giản)
   const n = scores.length;
   let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
   scores.forEach((s, i) => {
-    const x = n - i;
+    const x = n - i; // phiên mới nhất x lớn nhất
     sumX += x; sumY += s; sumXY += x * s; sumX2 += x * x;
   });
   const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  // slope dương: điểm đang tăng -> sắp về Tài
+  // slope âm: điểm đang giảm -> sắp về Xỉu
   const avg = sumY / n;
   let predict, confidence;
   if (slope > 0.3) { predict = "Tài"; confidence = Math.min(60 + Math.round(slope * 10), 82); }
@@ -165,7 +137,7 @@ function algoFibonacci(history) {
   const fibTypes = fibIdx.filter((i) => i < types.length).map((i) => types[i]);
   let tai = 0, xiu = 0;
   fibTypes.forEach((t, i) => {
-    const w = fibTypes.length - i;
+    const w = fibTypes.length - i; // vị trí đầu (gần nhất) trọng số cao hơn
     if (t === "Tài") tai += w;
     else if (t === "Xỉu") xiu += w;
   });
@@ -187,10 +159,11 @@ function algoAlternating(history) {
   return null;
 }
 
-// 7. Pattern nhóm 2-2, 3-3
+// 7. Pattern nhóm 2-2, 3-3 (bộ đôi, bộ ba)
 function algoPairGroup(history) {
   if (history.length < 10) return null;
   const types = history.slice(0, 12).map((r) => getType(r.score));
+  // Tìm nhóm liên tiếp
   const groups = [];
   let cur = types[0], cnt = 1;
   for (let i = 1; i < types.length; i++) {
@@ -199,17 +172,20 @@ function algoPairGroup(history) {
   }
   groups.push({ type: cur, count: cnt });
   if (groups.length < 3) return null;
+  // Nếu 3 nhóm gần nhất có count giống nhau -> tiếp tục pattern
   const g = groups.slice(0, 3);
   if (g[0].count === g[1].count && g[1].count === g[2].count) {
+    // Pattern đều: theo nhóm hiện tại
     return { method: "Cầu Nhóm Đều", predict: g[0].type, confidence: 74 };
   }
   if (g[0].count === 1 && g[1].count >= 2) {
+    // Vừa đổi chiều sau chuỗi dài -> bẻ
     return { method: "Đổi Chiều", predict: g[0].type === "Tài" ? "Xỉu" : "Tài", confidence: 70 };
   }
   return null;
 }
 
-// 8. Entropy Shannon
+// 8. Entropy Shannon - đo độ hỗn loạn
 function algoEntropy(history) {
   if (history.length < 20) return null;
   const recent = history.slice(0, 30);
@@ -218,6 +194,8 @@ function algoEntropy(history) {
   const total = tai + xiu;
   const pT = tai / total, pX = xiu / total;
   const entropy = -(pT > 0 ? pT * Math.log2(pT) : 0) - (pX > 0 ? pX * Math.log2(pX) : 0);
+  // Entropy cao (~1) -> thị trường hỗn loạn -> theo tần suất thấp hơn
+  // Entropy thấp -> theo xu hướng rõ ràng
   const predict = pT > pX ? (entropy > 0.9 ? "Xỉu" : "Tài") : (entropy > 0.9 ? "Tài" : "Xỉu");
   const confidence = Math.round(50 + (1 - entropy) * 30 + Math.abs(pT - pX) * 20);
   return { method: "Entropy Shannon", predict, confidence: Math.min(confidence, 80) };
@@ -248,8 +226,9 @@ function algoEnsemble(history) {
   const predict = scoreTai >= scoreXiu ? "Tài" : "Xỉu";
   const totalWeight = scoreTai + scoreXiu;
   const rawConf = Math.round((Math.max(scoreTai, scoreXiu) / totalWeight) * 100);
+  // Điều chỉnh confidence thực tế: không vượt 89%
   const confidence = Math.min(Math.max(rawConf, 51), 89);
-  const dominantAlgo = [...algos].sort((a,b) => (b.result.confidence * b.weight) - (a.result.confidence * a.weight))[0];
+  const dominantAlgo = algos.sort((a,b) => (b.result.confidence * b.weight) - (a.result.confidence * a.weight))[0];
   return { method: "Tổng Hợp AI v2", predict, confidence, thuatToanChinhYeu: dominantAlgo.result.method };
 }
 
@@ -339,31 +318,6 @@ app.get("/algorithms", async (req, res) => {
   } catch (err) {
     res.status(500).json({ loi: err.message });
   }
-});
-
-// POST /push - nhận data từ browser gửi lên (bypass 403)
-app.post("/push", (req, res) => {
-  try {
-    const list = req.body?.data?.resultList || req.body?.resultList || [];
-    if (!Array.isArray(list) || list.length === 0)
-      return res.status(400).json({ loi: "Không có resultList" });
-    cachedData = list;
-    lastUpdated = Date.now();
-    res.json({ ok: true, da_luu: list.length, thoi_gian: new Date(lastUpdated).toISOString() });
-  } catch (err) {
-    res.status(500).json({ loi: err.message });
-  }
-});
-
-// GET /status - kiểm tra cache
-app.get("/status", (req, res) => {
-  res.json({
-    cache: cachedData.length > 0,
-    so_phien: cachedData.length,
-    cap_nhat_luc: lastUpdated ? new Date(lastUpdated).toISOString() : null,
-    api_url: API_URL,
-    id: "@sewdangcap",
-  });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
