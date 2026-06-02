@@ -14,7 +14,15 @@ const API_URL =
 
 // ─── Fetch data from source ───────────────────────────────────────────────────
 async function fetchData() {
-  const res = await fetch(API_URL);
+  const res = await fetch(API_URL, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*",
+      "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
+      "Referer": "https://demo7892.fun/",
+      "Origin": "https://demo7892.fun",
+    },
+  });
   if (!res.ok) throw new Error("Fetch failed: " + res.status);
   const json = await res.json();
   return json.data.resultList || [];
