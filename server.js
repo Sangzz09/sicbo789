@@ -18,46 +18,47 @@ let cachedData = [];
 let lastUpdated = null;
 
 async function fetchData() {
-  // Thử các proxy công khai để bypass 403
-  const proxies = [
-    `https://corsproxy.io/?${encodeURIComponent(API_URL)}`,
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(API_URL)}`,
-    `https://proxy.cors.sh/${API_URL}`,
-  ];
+  const { fetch: undiciFetch, Agent } = await import("undici");
+
+  const dispatcher = new Agent({
+    connect: { timeout: 10_000 },
+    // Giả lập TLS fingerprint như Chrome
+    pipelining: 1,
+  });
 
   const headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0",
-    "Accept": "*/*",
-    "Accept-Language": "en,vi;q=0.9",
-    "Authorization": "f03c7ca3baa6561825b10556cbb3ecf8",
-    "Origin": "https://789clubs.im",
-    "Referer": "https://789clubs.im/",
+    ":authority": "demo7892.fun",
+    ":method": "GET",
+    ":scheme": "https",
+    "accept": "*/*",
+    "accept-encoding": "gzip, deflate, br, zstd",
+    "accept-language": "en,vi;q=0.9",
+    "authorization": "f03c7ca3baa6561825b10556cbb3ecf8",
+    "content-type": "application/json;charset=UTF-8",
+    "origin": "https://789clubs.im",
+    "priority": "u=1, i",
+    "referer": "https://789clubs.im/",
+    "sec-ch-ua": '"Chromium";v="148", "Microsoft Edge";v="148", "Not/A)Brand";v="99"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "cross-site",
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0",
   };
 
-  // Thử direct trước
   try {
-    const res = await fetch(API_URL, { headers });
+    const res = await undiciFetch(API_URL, { headers, dispatcher });
     if (res.ok) {
       const json = await res.json();
       const list = json.data?.resultList || [];
       if (list.length > 0) { cachedData = list; lastUpdated = Date.now(); return list; }
     }
-  } catch(_) {}
-
-  // Thử từng proxy
-  for (const url of proxies) {
-    try {
-      const res = await fetch(url, { headers: { "x-requested-with": "XMLHttpRequest" } });
-      if (!res.ok) continue;
-      const json = await res.json();
-      const list = json.data?.resultList || json.resultList || [];
-      if (list.length > 0) { cachedData = list; lastUpdated = Date.now(); return list; }
-    } catch(_) { continue; }
-  }
+  } catch(e) { console.error("undici fetch lỗi:", e.message); }
 
   // Dùng cache nếu có
   if (cachedData.length > 0) return cachedData;
-  throw new Error("Không thể lấy dữ liệu - API bị chặn. Dùng /push để cập nhật thủ công.");
+  throw new Error("API bị chặn theo IP. Vui lòng POST data lên /push.");
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
