@@ -16,11 +16,20 @@ const API_URL =
 async function fetchData() {
   const res = await fetch(API_URL, {
     headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      "Accept": "application/json, text/plain, */*",
-      "Accept-Language": "vi-VN,vi;q=0.9,en;q=0.8",
-      "Referer": "https://demo7892.fun/",
-      "Origin": "https://demo7892.fun",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36 Edg/148.0.0.0",
+      "Accept": "*/*",
+      "Accept-Language": "en,vi;q=0.9",
+      "Accept-Encoding": "gzip, deflate, br, zstd",
+      "Authorization": "f03c7ca3baa6561825b10556cbb3ecf8",
+      "Content-Type": "application/json;charset=UTF-8",
+      "Origin": "https://789clubs.im",
+      "Referer": "https://789clubs.im/",
+      "sec-ch-ua": '"Chromium";v="148", "Microsoft Edge";v="148", "Not/A)Brand";v="99"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"Windows"',
+      "sec-fetch-dest": "empty",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-site": "cross-site",
     },
   });
   if (!res.ok) throw new Error("Fetch failed: " + res.status);
