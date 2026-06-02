@@ -22,14 +22,14 @@ async function fetchData() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function getType(score) {
-  if (score >= 4 && score <= 10) return "Xỉu";
-  if (score >= 11 && score <= 17) return "Tài";
+  if (score >= 3 && score <= 10) return "Xỉu";
+  if (score >= 11 && score <= 18) return "Tài";
   return "Bão";
 }
 
 function viForType(type) {
-  const xiuPools = [4,5,6,7,8,9,10];
-  const taiPools = [11,12,13,14,15,16,17];
+  const xiuPools = [3,4,5,6,7,8,9,10];
+  const taiPools = [11,12,13,14,15,16,17,18];
   const pool = type === "Xỉu" ? xiuPools : taiPools;
   const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, 3).sort((a,b) => a-b);
   return shuffled.join("-");
@@ -56,23 +56,14 @@ function algoStreak(history) {
   return { method: "Theo Cầu", predict: streak, confidence: 55 };
 }
 
-// 2. Markov Chain bậc 2 (xét 2 phiên trước)
+// 2. Markov Chain nâng cao với trọng số phiên gần
 function algoMarkov(history) {
   if (history.length < 30) return null;
   const types = history.map((r) => getType(r.score)).filter(t => t !== "Bão");
-  // Bậc 2: xét cặp (t-2, t-1) -> t
-  const trans2 = {};
-  for (let i = 0; i < types.length - 2; i++) {
-    const key = types[i+1] + "|" + types[i];
-    const next = types[i];
-    if (!trans2[key]) trans2[key] = { Tài: 0, Xỉu: 0 };
-    // shift: dùng types[i] = phiên cũ hơn, ta cần transition từ pair -> next
-  }
-  // Markov bậc 1 nâng cao với trọng số phiên gần
   const transitions = { Tài: { Tài: 0, Xỉu: 0 }, Xỉu: { Tài: 0, Xỉu: 0 } };
   for (let i = 0; i < types.length - 1; i++) {
-    const cur = types[i+1], next = types[i]; // history[0] = mới nhất
-    const weight = 1 + (types.length - i) * 0.05; // phiên gần trọng số cao hơn
+    const cur = types[i+1], next = types[i];
+    const weight = 1 + (types.length - i) * 0.05;
     if (transitions[cur] && transitions[cur][next] !== undefined) {
       transitions[cur][next] += weight;
     }
@@ -94,14 +85,13 @@ function algoFrequency(history) {
   let scoreTai = 0, scoreXiu = 0;
   recent50.forEach((r, i) => {
     const t = getType(r.score);
-    const w = 1 / (i + 1); // phiên gần trọng số cao hơn
+    const w = 1 / (i + 1);
     if (t === "Tài") scoreTai += w;
     else if (t === "Xỉu") scoreXiu += w;
   });
   const total = scoreTai + scoreXiu;
   if (total === 0) return null;
   const ratioTai = scoreTai / total;
-  // Nếu lệch nhiều -> bên ít xuất hiện sắp về
   const predict = ratioTai > 0.58 ? "Xỉu" : ratioTai < 0.42 ? "Tài" : getType(history[0].score);
   const confidence = Math.round(48 + Math.abs(ratioTai - 0.5) * 80);
   return { method: "Tần Suất Trọng Số", predict, confidence: Math.min(confidence, 82) };
@@ -111,16 +101,13 @@ function algoFrequency(history) {
 function algoScoreTrend(history) {
   if (history.length < 15) return null;
   const scores = history.slice(0, 15).map((r) => r.score);
-  // Tính slope tuyến tính (regression đơn giản)
   const n = scores.length;
   let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
   scores.forEach((s, i) => {
-    const x = n - i; // phiên mới nhất x lớn nhất
+    const x = n - i;
     sumX += x; sumY += s; sumXY += x * s; sumX2 += x * x;
   });
   const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-  // slope dương: điểm đang tăng -> sắp về Tài
-  // slope âm: điểm đang giảm -> sắp về Xỉu
   const avg = sumY / n;
   let predict, confidence;
   if (slope > 0.3) { predict = "Tài"; confidence = Math.min(60 + Math.round(slope * 10), 82); }
@@ -137,7 +124,7 @@ function algoFibonacci(history) {
   const fibTypes = fibIdx.filter((i) => i < types.length).map((i) => types[i]);
   let tai = 0, xiu = 0;
   fibTypes.forEach((t, i) => {
-    const w = fibTypes.length - i; // vị trí đầu (gần nhất) trọng số cao hơn
+    const w = fibTypes.length - i;
     if (t === "Tài") tai += w;
     else if (t === "Xỉu") xiu += w;
   });
@@ -159,11 +146,10 @@ function algoAlternating(history) {
   return null;
 }
 
-// 7. Pattern nhóm 2-2, 3-3 (bộ đôi, bộ ba)
+// 7. Pattern nhóm 2-2, 3-3
 function algoPairGroup(history) {
   if (history.length < 10) return null;
   const types = history.slice(0, 12).map((r) => getType(r.score));
-  // Tìm nhóm liên tiếp
   const groups = [];
   let cur = types[0], cnt = 1;
   for (let i = 1; i < types.length; i++) {
@@ -172,20 +158,17 @@ function algoPairGroup(history) {
   }
   groups.push({ type: cur, count: cnt });
   if (groups.length < 3) return null;
-  // Nếu 3 nhóm gần nhất có count giống nhau -> tiếp tục pattern
   const g = groups.slice(0, 3);
   if (g[0].count === g[1].count && g[1].count === g[2].count) {
-    // Pattern đều: theo nhóm hiện tại
     return { method: "Cầu Nhóm Đều", predict: g[0].type, confidence: 74 };
   }
   if (g[0].count === 1 && g[1].count >= 2) {
-    // Vừa đổi chiều sau chuỗi dài -> bẻ
     return { method: "Đổi Chiều", predict: g[0].type === "Tài" ? "Xỉu" : "Tài", confidence: 70 };
   }
   return null;
 }
 
-// 8. Entropy Shannon - đo độ hỗn loạn
+// 8. Entropy Shannon
 function algoEntropy(history) {
   if (history.length < 20) return null;
   const recent = history.slice(0, 30);
@@ -194,8 +177,6 @@ function algoEntropy(history) {
   const total = tai + xiu;
   const pT = tai / total, pX = xiu / total;
   const entropy = -(pT > 0 ? pT * Math.log2(pT) : 0) - (pX > 0 ? pX * Math.log2(pX) : 0);
-  // Entropy cao (~1) -> thị trường hỗn loạn -> theo tần suất thấp hơn
-  // Entropy thấp -> theo xu hướng rõ ràng
   const predict = pT > pX ? (entropy > 0.9 ? "Xỉu" : "Tài") : (entropy > 0.9 ? "Tài" : "Xỉu");
   const confidence = Math.round(50 + (1 - entropy) * 30 + Math.abs(pT - pX) * 20);
   return { method: "Entropy Shannon", predict, confidence: Math.min(confidence, 80) };
@@ -226,9 +207,8 @@ function algoEnsemble(history) {
   const predict = scoreTai >= scoreXiu ? "Tài" : "Xỉu";
   const totalWeight = scoreTai + scoreXiu;
   const rawConf = Math.round((Math.max(scoreTai, scoreXiu) / totalWeight) * 100);
-  // Điều chỉnh confidence thực tế: không vượt 89%
   const confidence = Math.min(Math.max(rawConf, 51), 89);
-  const dominantAlgo = algos.sort((a,b) => (b.result.confidence * b.weight) - (a.result.confidence * a.weight))[0];
+  const dominantAlgo = [...algos].sort((a,b) => (b.result.confidence * b.weight) - (a.result.confidence * a.weight))[0];
   return { method: "Tổng Hợp AI v2", predict, confidence, thuatToanChinhYeu: dominantAlgo.result.method };
 }
 
